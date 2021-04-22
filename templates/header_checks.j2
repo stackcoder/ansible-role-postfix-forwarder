@@ -1,0 +1,5 @@
+# {{ ansible_managed }}
+{% if postfix_forwarder__smime %}
+# Skip content_filter using header based routing
+/^X-Postfix-SMIME-Filter:/ FILTER {{ "relay:[%s]:%d" | format(postfix_forwarder__relay_server, postfix_forwarder__relay_port) }}
+{% endif %}

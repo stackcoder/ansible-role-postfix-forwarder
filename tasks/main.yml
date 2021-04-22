@@ -1,0 +1,81 @@
+- assert:
+    that:
+      - postfix_forwarder__recipient.split('@')[0] | length > 0
+      - postfix_forwarder__recipient.split('@')[1] | length > 0
+      - postfix_forwarder__relay_server | length > 0
+      - postfix_forwarder__relay_port | int > 0
+      - postfix_forwarder__relay_user | length > 0
+
+- name: Set debconf postfix mailer type
+  debconf:
+    name: postfix
+    question: postfix/main_mailer_type
+    value: 'Local only'
+    vtype: select
+
+- name: Install postfix
+  apt:
+    pkg:
+      - postfix
+      - mailutils
+
+- name: Setup lookup table sasl_passwd
+  template:
+    src: '{{ role_path }}/templates/sasl_passwd.j2'
+    dest: '/etc/postfix/sasl_passwd'
+    owner: root
+    group: root
+    mode: u=rw,g=r,o=
+  notify: [ 'postmap-sasl_passwd', 'reload-postfix' ]
+
+- name: Setup lookup table header_checks
+  template:
+    src: '{{ role_path }}/templates/header_checks.j2'
+    dest: '/etc/postfix/header_checks'
+    owner: root
+    group: root
+    mode: u=rw,g=r,o=r
+  notify: [ 'reload-postfix' ]
+  when: postfix_forwarder__smime
+
+- name: Add smime filter user
+  user:
+    name: postfix-smimefilter
+    comment: "Ansible managed"
+    create_home: false
+    remove: true
+    system: true
+    shell: /usr/sbin/nologin
+    state: "{{ postfix_forwarder__smime | ternary('present', 'absent') }}"
+
+- name: Install smime filter script
+  template:
+    src: '{{ role_path }}/templates/postfix-smime-filter.sh.j2'
+    dest: '/usr/local/bin/postfix-smime-filter.sh'
+    owner: postfix-smimefilter
+    group: postfix-smimefilter
+    mode: u=rx,g=rx,o=
+  when: postfix_forwarder__smime
+
+- name: Insert smime filter service in postfix master.cf
+  blockinfile:
+    path: '/etc/postfix/master.cf'
+    backup: true
+    block: |
+      # SMIME signature and encryption filter
+      smimefilter unix - n n - 2 pipe
+        flags=Rq user=postfix-smimefilter null_sender=
+        argv=/usr/local/bin/postfix-smime-filter.sh -f ${sender} -- ${recipient}
+  when: postfix_forwarder__smime
+  notify: [ 'reload-postfix' ]
+
+# config must be world readable for sendmail
+- name: Configure postfix
+  template:
+    src: '{{ role_path }}/templates/main.cf.j2'
+    dest: '/etc/postfix/main.cf'
+    backup: true
+    owner: root
+    group: root
+    mode: u=rw,g=r,o=r
+  notify: [ 'reload-postfix' ]

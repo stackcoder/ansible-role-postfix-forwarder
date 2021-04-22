@@ -1,0 +1,9 @@
+postfix_forwarder__recipient: notify+{{ ansible_hostname }}@example.com
+postfix_forwarder__relay_server: mail.example.com
+postfix_forwarder__relay_port: 587
+postfix_forwarder__relay_user: user
+postfix_forwarder__relay_password: password
+postfix_forwarder__smime: false
+postfix_forwarder__smime_recipient_cert:
+postfix_forwarder__smime_signing_cert:
+postfix_forwarder__smime_signing_key:

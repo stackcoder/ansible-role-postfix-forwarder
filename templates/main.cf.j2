@@ -1,0 +1,56 @@
+# {{ ansible_managed }}
+
+# See http://www.postfix.org/COMPATIBILITY_README.html -- default to 2 on
+# fresh installs.
+compatibility_level = 2
+
+inet_interfaces = loopback-only
+default_transport = error
+relay_transport = error
+inet_protocols = all
+
+myhostname = {{ ansible_fqdn }}
+mydestination = $myhostname, localhost.localdomain, localhost
+mynetworks = 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128
+
+recipient_delimiter = +
+
+# Incoming mail
+smtpd_recipient_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination
+
+# TLS parameters incoming
+smtpd_use_tls=yes
+smtpd_tls_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem
+smtpd_tls_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
+smtpd_tls_session_cache_database = btree:${data_directory}/smtpd_scache
+
+# Outgoing mail
+smtp_sasl_auth_enable = yes
+smtp_sasl_security_options = noanonymous
+smtp_sasl_password_maps = hash:${config_directory}/sasl_passwd
+smtp_sender_dependent_authentication = yes
+
+# TLS parameters outgoing
+smtp_tls_security_level = encrypt
+smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
+
+# Lookup tables
+{% set ansible_fqdn = hostvars[inventory_hostname]["ansible_fqdn"] %}
+{% set recipient_domain = postfix_forwarder__recipient.split('@')[1] %}
+{% set relay_address = "[%s]:%d" | format(postfix_forwarder__relay_server, postfix_forwarder__relay_port) %}
+
+alias_maps = hash:/etc/aliases
+alias_database = hash:/etc/aliases
+
+transport_maps = inline:{{ "{{%s = relay:%s}}" | format(recipient_domain, relay_address) }}
+sender_canonical_maps = inline:{{ "{{@%s = %s}}" | format(ansible_fqdn, postfix_forwarder__recipient) }}
+recipient_canonical_maps = inline:{{ "{{root@%s = %s}}" | format(ansible_fqdn, postfix_forwarder__recipient) }}
+
+{% if postfix_forwarder__smime %}
+# SMIME signature and encryption filter
+content_filter = smimefilter
+smimefilter_destination_recipient_limit = 1
+header_checks = regexp:${config_directory}/header_checks
+{% endif %}
+
+#debug_peer_list = {{ postfix_forwarder__relay_server }}

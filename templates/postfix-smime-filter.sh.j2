@@ -1,0 +1,36 @@
+#!/bin/bash
+set -euo pipefail
+
+# {{ ansible_managed }}
+SENDMAIL="${SENDMAIL:-/usr/sbin/sendmail -G -i}"
+
+recipient_cert=$(cat <<EOF
+{{ postfix_forwarder__smime_recipient_cert | trim }}
+EOF
+)
+
+signing_cert=$(cat <<EOF
+{{ postfix_forwarder__smime_signing_cert | trim }}
+EOF
+)
+
+signing_key=$(cat <<EOF
+{{ postfix_forwarder__smime_signing_key | trim }}
+EOF
+)
+
+sender="${2:-}"
+subject="Encrypted"
+recipient="{{ postfix_forwarder__recipient }}"
+
+options=()
+[[ -n "${sender}" ]] && options+=(-from "${sender}")
+[[ -n "${recipient}" ]] && options+=(-to "${recipient}")
+[[ -n "${subject}" ]] && options+=(-subject "${subject}")
+
+cat \
+  <(echo "X-Postfix-SMIME-Filter: True") \
+  <(cat <&0 \
+    | ([[ -n "${signing_cert}" ]] && [[ -n "${signing_key}" ]] && openssl smime -sign -signer <(echo "${signing_cert}") -inkey <(echo "${signing_key}") || cat) \
+    | ([[ -n "${recipient_cert}" ]] && openssl smime -encrypt "${options[@]}" <(echo "${recipient_cert}") || cat) ) \
+  | $SENDMAIL "$@"
